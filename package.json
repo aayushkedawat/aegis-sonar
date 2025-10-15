@@ -1,0 +1,42 @@
+{
+  "name": "aegis-sonar",
+  "version": "1.0.0",
+  "description": "Aegis — a Git pre-push shield for SonarQube Quality Gate (JS/TS).",
+  "type": "module",
+  "bin": {
+    "aegis": "bin/cli.js"
+  },
+  "main": "src/run.js",
+  "files": [
+    "bin/",
+    "src/",
+    "templates/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node -e \"console.log('ok')\"",
+    "lint": "echo \"(add your linter here)\" && exit 0",
+    "release:patch": "npm version patch -m \"chore(release): %s\" && git push --follow-tags",
+    "release:minor": "npm version minor -m \"chore(release): %s\" && git push --follow-tags",
+    "release:major": "npm version major -m \"chore(release): %s\" && git push --follow-tags"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aayushkedawat/aegis-sonar.git"
+  },
+  "keywords": [
+    "sonarqube",
+    "quality",
+    "git-hook",
+    "pre-push",
+    "javascript",
+    "typescript",
+    "cli"
+  ],
+  "author": "Aayush Kedawat",
+  "license": "MIT"
+}
