@@ -1,6 +1,5 @@
-import fs from "fs";
+import fs from "node:fs";
 import which from "which";
-import fetch from "node-fetch";
 import kleur from "kleur";
 
 /* ----------------------------- color helpers ----------------------------- */

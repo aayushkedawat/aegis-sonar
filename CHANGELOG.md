@@ -22,6 +22,19 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) pr
 
 ---
 
+## [1.0.2]
+
+### Added
+
+- --print-issues command - defaults to silent
+
+### Fixed
+
+- Fixed Dependencies Issue
+- Other minor fixes
+
+---
+
 ## [1.0.1] - 2025-10-16
 
 ### Added

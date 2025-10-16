@@ -20,6 +20,7 @@ Think of it as a **shield** between sloppy commits and your production pipelines
 - **Metadata included** → timestamp, filters used, Node/CLI version
 - **Configurable** → `.aegisrc.json` for severities, types, limits, etc.
 - **Doctor** → sanity-checks your environment (scanner, token, project, server health)
+- **Optional console printing** → keep console clean by default, opt-in with `--print-issues`
 
 ---
 
@@ -64,6 +65,23 @@ npx aegis init --scaffold
 Now every `git push` runs Aegis first.
 
 ---
+
+## 🖨️ Printing issues to console
+
+By default, Aegis **does not print all issues to console** (to avoid noise & stack errors on large repos).  
+Instead, it saves issues to a file (configured via `.aegisrc.json` or defaults to `sonar-issues.txt`).
+
+If you want to also print issues to console, add `--print-issues`:
+
+```bash
+# Print issues after a normal run
+npx aegis run --print-issues
+
+# Print issues on dry-run
+npx aegis run --dry-run --print-issues
+```
+
+Console output is capped (default: 300 issues) to stay readable.
 
 ## 🛠️ Commands
 
