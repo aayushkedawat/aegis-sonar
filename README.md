@@ -21,6 +21,10 @@ Think of it as a **shield** between sloppy commits and your production pipelines
 - **Configurable** → `.aegisrc.json` for severities, types, limits, etc.
 - **Doctor** → sanity-checks your environment (scanner, token, project, server health)
 - **Optional console printing** → keep console clean by default, opt-in with `--print-issues`
+- Verify hooks in Desktop/GUI:
+  - Install temp test hook: `npx aegis verify-hooks --install`
+  - Push from your GUI (it will block once and log a timestamp)
+  - Restore original hook: `npx aegis verify-hooks --uninstall`
 
 ---
 

@@ -22,6 +22,20 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) pr
 
 ---
 
+## [1.0.3]
+
+### Added
+
+- Support of Github Desktop
+- Verify hooks to verify the hooks installation
+
+### Fixed
+
+- Fixed Dependencies Issue
+- Other minor fixes
+
+---
+
 ## [1.0.2]
 
 ### Added

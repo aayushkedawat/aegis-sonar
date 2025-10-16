@@ -4,6 +4,7 @@ import { initHook } from "../src/init.js";
 import { run } from "../src/run.js";
 import { uninstall } from "../src/uninstall.js";
 import { doctor } from "../src/doctor.js";
+import { verifyHooks } from "../src/verify-hooks.js";
 
 const [, , rawCmd, ...rest] = process.argv;
 
@@ -32,6 +33,8 @@ Usage:
   npx aegis run [--preview] [--base <branch>] [--cwd <dir>] [--dry-run] [--verbose] [--format text|md|json] [--print-issues]
   npx aegis uninstall
   npx aegis doctor
+  npx aegis verify-hooks [--install] [--uninstall] [--no-block]
+
 
 Options:
   --preview        Scan only changed files since base branch
@@ -76,6 +79,9 @@ try {
       break;
     case "doctor":
       await doctor(argv);
+      break;
+    case "verify-hooks":
+      await verifyHooks(argv);
       break;
     default:
       console.error(`Unknown command: ${cmd}\n`);

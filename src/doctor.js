@@ -1,34 +1,21 @@
+// src/doctor.js
 import fs from "node:fs";
+import { execa } from "execa";
 import which from "which";
 import kleur from "kleur";
 
-/* ----------------------------- color helpers ----------------------------- */
-
-const useColor = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
-const color = {
+/* ---------------------- color helpers ---------------------- */
+const useColor = !!process.stdout?.isTTY && !process.env.NO_COLOR;
+const c = {
   ok: (s) => (useColor ? kleur.green().bold(s) : s),
   err: (s) => (useColor ? kleur.red().bold(s) : s),
+  warn: (s) => (useColor ? kleur.yellow().bold(s) : s),
   info: (s) => (useColor ? kleur.cyan(s) : s),
   dim: (s) => (useColor ? kleur.dim(s) : s),
   head: (s) => (useColor ? kleur.bold().underline(s) : s),
 };
 
-/* ------------------------------- utilities ------------------------------- */
-
-function logOk(msg, extra) {
-  console.log(color.ok("✔"), msg, extra ?? "");
-}
-function logErr(msg, extra) {
-  console.error(color.err("✖"), msg, extra ?? "");
-}
-function logInfo(msg, extra) {
-  console.log(color.info("ℹ"), msg, extra ?? "");
-}
-
-function trimSlash(u) {
-  return u?.endsWith("/") ? u.slice(0, -1) : u;
-}
-
+/* ---------------------- small utils ---------------------- */
 function readProperties(file) {
   const out = {};
   if (!fs.existsSync(file)) return out;
@@ -36,206 +23,264 @@ function readProperties(file) {
   for (const raw of txt.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith("#")) continue;
-    const i = line.indexOf("=");
-    if (i === -1) continue;
-    out[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    const idx = line.indexOf("=");
+    if (idx === -1) continue;
+    const key = line.slice(0, idx).trim();
+    const val = line.slice(idx + 1).trim();
+    out[key] = val;
   }
   return out;
 }
-
-function loadConfig() {
-  const defaults = {
-    severities: "BLOCKER,CRITICAL,MAJOR",
-    types: "BUG,VULNERABILITY,CODE_SMELL",
-    max: 500,
-    issuesFile: "sonar-issues.txt",
-    format: "text",
-  };
-  const result = { ...defaults };
-  for (const p of [".aegisrc.json", ".aegisrc.local.json"]) {
-    if (!fs.existsSync(p)) continue;
-    try {
-      const user = JSON.parse(fs.readFileSync(p, "utf-8"));
-      if (user && typeof user === "object") Object.assign(result, user);
-    } catch {
-      /* ignore */
-    }
-  }
-  if (!Number.isFinite(result.max)) result.max = defaults.max;
-  if (!["text", "md", "json"].includes(result.format))
-    result.format = defaults.format;
-  return result;
+function trimSlash(u) {
+  return u?.endsWith("/") ? u.slice(0, -1) : u;
 }
 
-function makeAuthHeader(token) {
-  const b64 = Buffer.from(String(token ?? "") + ":").toString("base64");
-  return { Authorization: "Basic " + b64 };
-}
-
-/* ----------------------- focused, single-step checks ---------------------- */
-
-async function hasScanner() {
+/* ---------------------- checks (split out) ---------------------- */
+async function checkScanner() {
   try {
     const bin = await which("sonar-scanner");
-    logOk("sonar-scanner found", color.dim("→ " + bin));
+    console.log(c.ok("✔"), "sonar-scanner found", c.dim(`→ ${bin}`));
     return true;
   } catch {
-    logErr("sonar-scanner not found in PATH");
-    logInfo("Install (macOS):", color.dim("brew install sonar-scanner"));
+    console.error(c.err("✖"), "sonar-scanner not found on PATH");
+    console.log(
+      c.info("ℹ"),
+      "Install (macOS):",
+      c.dim("brew install sonar-scanner")
+    );
     return false;
   }
 }
 
-function getToken() {
+function checkToken() {
   const token = process.env.SONAR_TOKEN;
   if (token) {
-    logOk("SONAR_TOKEN is set");
+    console.log(c.ok("✔"), "SONAR_TOKEN is set");
     return { ok: true, token };
   }
-  logErr(
-    "SONAR_TOKEN not set. Run:",
-    color.dim("export SONAR_TOKEN=<your-token>")
-  );
-  return { ok: false, token: null };
+  console.error(c.err("✖"), "SONAR_TOKEN not set");
+  console.log(c.info("ℹ"), "Run:", c.dim("export SONAR_TOKEN=<your-token>"));
+  return { ok: false, token: "" };
 }
 
-function getSonarProps() {
+function checkProps() {
   const props = readProperties("sonar-project.properties");
   if (Object.keys(props).length === 0) {
-    logErr("sonar-project.properties missing or empty in repo root");
-    return { ok: false, host: null, projectKey: null };
+    console.error(
+      c.err("✖"),
+      "sonar-project.properties missing or empty in repo root"
+    );
+    return { ok: false, host: "", projectKey: "" };
   }
-  logOk("sonar-project.properties found");
+  console.log(c.ok("✔"), "sonar-project.properties found");
 
-  const host = props["sonar.host.url"] ?? "";
-  const projectKey = props["sonar.projectKey"] ?? "";
+  const host = props["sonar.host.url"] || "";
+  const projectKey = props["sonar.projectKey"] || "";
+
+  if (host) {
+    console.log(c.ok("✔"), "sonar.host.url", c.dim(`→ ${host}`));
+  } else {
+    console.error(c.err("✖"), "sonar.host.url missing");
+  }
+
+  if (projectKey) {
+    console.log(c.ok("✔"), "sonar.projectKey", c.dim(`→ ${projectKey}`));
+  } else {
+    console.error(c.err("✖"), "sonar.projectKey missing");
+  }
+
+  return { ok: Boolean(host && projectKey), host, projectKey };
+}
+
+function buildAuthHeader(token) {
+  return token
+    ? {
+        Authorization: "Basic " + Buffer.from(`${token}:`).toString("base64"),
+      }
+    : null;
+}
+
+async function checkServerHealth(base) {
+  if (!base) return false;
+  try {
+    const resp = await fetch(base + "/api/system/health");
+    const json = await resp.json().catch(() => ({}));
+    if (resp.ok) {
+      console.log(
+        c.ok("✔"),
+        "Server health",
+        c.dim(String(json?.health ?? "unknown"))
+      );
+      return true;
+    }
+    console.error(
+      c.err("✖"),
+      "Server health check failed",
+      c.dim("HTTP " + resp.status)
+    );
+    if (resp.status === 403) {
+      console.log(
+        c.info("ℹ"),
+        "Your token user may not have permission to read system health; this is optional."
+      );
+    }
+    return false;
+  } catch (e) {
+    console.error(
+      c.err("✖"),
+      "Cannot reach SonarQube server",
+      c.dim(e?.message || String(e))
+    );
+    return false;
+  }
+}
+
+async function validateAuth(base, authHeader) {
+  if (!base || !authHeader) return false;
+  try {
+    const resp = await fetch(base + "/api/authentication/validate", {
+      headers: authHeader,
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (resp.ok && json?.valid === true) {
+      console.log(c.ok("✔"), "Token valid for SonarQube");
+      return true;
+    }
+    console.error(c.err("✖"), "Token invalid for SonarQube");
+    return false;
+  } catch (e) {
+    console.error(
+      c.err("✖"),
+      "Auth validation call failed",
+      c.dim(e?.message || String(e))
+    );
+    return false;
+  }
+}
+
+async function checkProjectExists(base, authHeader, projectKey) {
+  if (!base || !authHeader || !projectKey) return false;
+  try {
+    const url = new URL(base + "/api/components/show");
+    url.searchParams.set("component", projectKey);
+    const resp = await fetch(url, { headers: authHeader });
+
+    if (resp.ok) {
+      console.log(
+        c.ok("✔"),
+        "Project exists in SonarQube",
+        c.dim("key=" + projectKey)
+      );
+      return true;
+    }
+
+    if (resp.status === 404) {
+      console.error(
+        c.err("✖"),
+        "Project not found in SonarQube",
+        c.dim("key=" + projectKey)
+      );
+    } else {
+      console.error(
+        c.err("✖"),
+        "Project lookup failed",
+        c.dim("HTTP " + resp.status)
+      );
+      if (resp.status === 403) {
+        console.log(
+          c.info("ℹ"),
+          "Ensure the token user has at least",
+          c.dim("Browse"),
+          "permission on the project."
+        );
+      }
+    }
+    return false;
+  } catch (e) {
+    console.error(
+      c.err("✖"),
+      "Project lookup error",
+      c.dim(e?.message || String(e))
+    );
+    return false;
+  }
+}
+
+/* ---------------------- Git hooks health ---------------------- */
+async function reportHooks() {
+  console.log("");
+  console.log(c.head("🔩 Git Hooks Health"));
+
+  let hooksPath = "";
+  try {
+    const { stdout } = await execa("git", ["config", "core.hooksPath"]);
+    hooksPath = (stdout || "").trim();
+  } catch {
+    // ignore; not a git repo or git not available
+  }
+  if (!hooksPath) hooksPath = ".git/hooks";
+
+  const hasPosix = fs.existsSync(`${hooksPath}/pre-push`);
+  const hasWin = fs.existsSync(`${hooksPath}/pre-push.cmd`);
+
+  console.log(c.info("• hooksPath:"), c.dim(hooksPath));
+  console.log(c.info("• pre-push:"), hasPosix ? c.ok("yes") : c.warn("no"));
+  console.log(c.info("• pre-push.cmd:"), hasWin ? c.ok("yes") : c.warn("no"));
+
+  if (hasPosix || hasWin) {
+    console.log(
+      c.ok("✔"),
+      "Hooks detected. If GitHub Desktop still bypasses hooks, ensure files are named exactly",
+      c.dim("pre-push"),
+      "and",
+      c.dim("pre-push.cmd"),
+      "and that",
+      c.dim("pre-push"),
+      "is executable with LF line endings."
+    );
+    return;
+  }
+
+  // no hooks present
+  console.log(
+    c.warn("⚠"),
+    "No pre-push hook detected. Run",
+    c.dim("npx aegis init --scaffold"),
+    "to install cross-platform hooks."
+  );
+}
+
+/* ---------------------- Sonar doctor ---------------------- */
+export async function doctor() {
+  console.log(c.head("🩺 Aegis doctor"));
+  console.log("");
 
   let ok = true;
-  if (host) logOk("sonar.host.url", color.dim("→ " + host));
-  else {
-    logErr("sonar.host.url missing in sonar-project.properties");
-    ok = false;
-  }
-  if (projectKey) logOk("sonar.projectKey", color.dim("→ " + projectKey));
-  else {
-    logErr("sonar.projectKey missing in sonar-project.properties");
-    ok = false;
-  }
 
-  return { ok, host, projectKey };
-}
+  ok = (await checkScanner()) && ok;
 
-async function checkHealth(baseUrl) {
-  try {
-    const resp = await fetch(baseUrl + "/api/system/health");
-    const js = await resp.json().catch(() => ({}));
-    if (resp.ok) {
-      logOk("Server health", color.dim(js?.health ?? "unknown"));
-      return true;
-    }
-    logErr("Server health check failed", color.dim("HTTP " + resp.status));
-    return false;
-  } catch (e) {
-    logErr("Cannot reach SonarQube server", color.dim(e?.message ?? String(e)));
-    return false;
-  }
-}
+  const { ok: tokenOk, token } = checkToken();
+  ok = tokenOk && ok;
 
-async function validateToken(baseUrl, headers) {
-  try {
-    const resp = await fetch(baseUrl + "/api/authentication/validate", {
-      headers,
-    });
-    const js = await resp.json().catch(() => ({}));
-    if (resp.ok && js?.valid === true) {
-      logOk("Token valid for SonarQube");
-      return true;
-    }
-    logErr("Token invalid for SonarQube");
-    return false;
-  } catch (e) {
-    logErr("Auth validation call failed", color.dim(e?.message ?? String(e)));
-    return false;
-  }
-}
+  const { ok: propsOk, host, projectKey } = checkProps();
+  ok = propsOk && ok;
 
-async function checkProject(baseUrl, headers, projectKey) {
-  try {
-    const url = new URL(baseUrl + "/api/components/show");
-    url.searchParams.set("component", projectKey);
-    const resp = await fetch(url, { headers });
-    if (resp.status === 404) {
-      logErr("Project not found in SonarQube", color.dim("key=" + projectKey));
-      return false;
-    }
-    if (!resp.ok) {
-      logErr("Project lookup failed", color.dim("HTTP " + resp.status));
-      return false;
-    }
-    logOk("Project exists in SonarQube", color.dim("key=" + projectKey));
-    return true;
-  } catch (e) {
-    logErr("Project lookup error", color.dim(e?.message ?? String(e)));
-    return false;
-  }
-}
-
-/* --------------------------------- main ---------------------------------- */
-
-export async function doctor() {
-  console.log(color.head("🩺 Aegis doctor"));
-  console.log(""); // spacing
-
-  // Non-fatal: scanner presence
-  const scannerOk = await hasScanner();
-
-  // Token + props (fatal if missing)
-  const { ok: tokenOk, token } = getToken();
-  const { ok: propsOk, host, projectKey } = getSonarProps();
-
-  // Config summary (informational)
-  const cfg = loadConfig();
-  logInfo(
-    "Config",
-    color.dim(
-      "severities=" +
-        cfg.severities +
-        "; types=" +
-        cfg.types +
-        "; max=" +
-        cfg.max +
-        "; issuesFile=" +
-        cfg.issuesFile +
-        "; format=" +
-        cfg.format
-    )
-  );
-
-  // Hard prerequisites must exist
-  if (!tokenOk || !propsOk) {
-    console.log("");
-    console.error(color.err("Doctor finished with errors."));
-    process.exit(1);
-  }
-
+  // Even if basics failed, continue to show as much diagnostic info as possible
   const base = trimSlash(host);
-  const headers = makeAuthHeader(token);
+  const authHeader = buildAuthHeader(token);
 
-  // Run independent remote checks
-  const [healthOk, authOk, projectOk] = await Promise.all([
-    checkHealth(base),
-    validateToken(base, headers),
-    checkProject(base, headers, projectKey),
-  ]);
+  ok = (await checkServerHealth(base)) && ok;
+  ok = (await validateAuth(base, authHeader)) && ok;
+  ok = (await checkProjectExists(base, authHeader, projectKey)) && ok;
 
-  const hadError = !(scannerOk && healthOk && authOk && projectOk);
+  await reportHooks();
 
   console.log("");
-  if (hadError) {
-    console.error(color.err("Doctor check complete (issues found)."));
-    process.exit(1);
-  } else {
-    console.log(color.ok("Doctor check complete."));
+  if (ok) {
+    console.log(c.ok("Doctor check complete."));
     process.exit(0);
+  } else {
+    console.error(c.err("Doctor check complete (issues found)."));
+    process.exit(1);
   }
 }
