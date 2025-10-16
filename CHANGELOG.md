@@ -22,6 +22,15 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) pr
 
 ---
 
+## [1.0.1] - 2025-10-16
+
+### Added
+
+- Initial CHANGELOG.md template
+- Placeholder for unreleased changes
+
+---
+
 ## [1.0.0] - 2025-10-15
 
 ### Added
