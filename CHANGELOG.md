@@ -22,6 +22,14 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) pr
 
 ---
 
+## [1.0.4]
+
+### Added
+
+- Automatically creation of sonar-project.properties
+
+---
+
 ## [1.0.3]
 
 ### Added

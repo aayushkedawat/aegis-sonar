@@ -1,6 +1,6 @@
 {
   "name": "aegis-sonar",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Aegis — a Git pre-push shield for SonarQube Quality Gate (JS/TS).",
   "type": "module",
   "bin": {
