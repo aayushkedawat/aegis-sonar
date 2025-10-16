@@ -6,8 +6,8 @@ on:
       - "v*.*.*"
 
 permissions:
-  contents: read
-  id-token: write # for npm provenance
+  contents: write
+  id-token: write
 
 jobs:
   publish-npm:
@@ -21,12 +21,8 @@ jobs:
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
-      - name: Install
-        run: npm ci
-
-      # Optional: run a quick sanity check
-      - name: Test
-        run: npm test
+      - run: npm ci
+      - run: npm test
 
       - name: Configure npm auth
         run: npm config set //registry.npmjs.org/:_authToken=${NPM_TOKEN}
@@ -37,3 +33,19 @@ jobs:
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Derive tag name
+        id: tag
+        run: |
+          REF="${GITHUB_REF#refs/tags/}"
+          echo "name=$REF" >> "$GITHUB_OUTPUT"
+
+      - name: Build release notes from CHANGELOG
+        run: node scripts/changelog-for-tag.js "${{ steps.tag.outputs.name }}" > RELEASE_NOTES.md
+
+      - name: Create GitHub Release with changelog
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          body_path: RELEASE_NOTES.md
+          generate_release_notes: false
