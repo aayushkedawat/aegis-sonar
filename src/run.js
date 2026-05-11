@@ -590,8 +590,8 @@ async function fetchIssuesDirect(cfg, serverUrl, projectKey, organization = "") 
     return {
       file: (i?.component || "").split(":").pop() || "",
       line: i?.line || 1,
-      sev, // plain for files
-      sevCol, // colored for console
+      sev,
+      sevCol,
       type: i?.type || "",
       rule: i?.rule || "",
       msg: (i?.message || "").replaceAll(/\s+/g, " ").trim(),
@@ -604,33 +604,42 @@ async function fetchIssuesDirect(cfg, serverUrl, projectKey, organization = "") 
     };
   });
 
+  // Severity counts
+  const bySeverity = {};
+  for (const r of rows) bySeverity[r.sev] = (bySeverity[r.sev] || 0) + 1;
+
+  // Group by file for readable console output
+  const byFile = new Map();
+  for (const r of rows) {
+    if (!byFile.has(r.file)) byFile.set(r.file, []);
+    byFile.get(r.file).push(r);
+  }
+
+  const filterDesc = c.dim(
+    "(sev: " +
+      (cfg.severities || "BLOCKER,CRITICAL,MAJOR") +
+      "; types: " +
+      (cfg.types || "BUG,VULNERABILITY,CODE_SMELL") +
+      "; max: " +
+      (cfg.max ?? 500) +
+      ")"
+  );
   const consoleLines = [
-    c.info("🔎"),
-    String(data.total) + " issues",
-    c.dim(
-      "(sev: " +
-        (cfg.severities || "BLOCKER,CRITICAL,MAJOR") +
-        "; types: " +
-        (cfg.types || "BUG,VULNERABILITY,CODE_SMELL") +
-        "; max: " +
-        (cfg.max ?? 500) +
-        ")"
-    ),
-    ...rows.map(
-      (r) =>
-        c.dim(r.file + ":" + r.line) +
-        " | " +
-        r.sevCol +
-        " | " +
-        c.dim(r.type) +
-        " | " +
-        c.dim(r.rule) +
-        " | " +
-        r.msg +
-        " | " +
-        c.link(r.url)
-    ),
+    c.info("🔎 " + data.total + " issues") + "  " + filterDesc,
+    "",
   ];
+  for (const [file, fileIssues] of byFile) {
+    const n = fileIssues.length;
+    consoleLines.push(
+      c.head(file) + "  " + c.dim("(" + n + (n === 1 ? " issue" : " issues") + ")")
+    );
+    for (const r of fileIssues) {
+      consoleLines.push(
+        "  " + c.dim(":" + r.line) + "  " + r.sevCol + "  " + c.dim(r.type) + "  " + r.msg + "  " + c.link(r.url)
+      );
+    }
+    consoleLines.push("");
+  }
 
   const filters =
     "severities=" +
@@ -651,6 +660,8 @@ async function fetchIssuesDirect(cfg, serverUrl, projectKey, organization = "") 
   return {
     console: consoleLines,
     count: rows.length,
+    total: data.total,
+    bySeverity,
     buildPayload: (fmt) => {
       const plainRows = rows.map(
         ({ file, line, sev, type, rule, msg, url }) => ({
@@ -675,5 +686,5 @@ function escMd(s) {
   return String(s ?? "").replaceAll("|", String.raw`\|`);
 }
 
-// Exported for testing
-export { readProps, loadConfig, resolveIssuesPath, buildTextTable, buildMarkdown, buildJson, escapeRegExp, trimSlash, pad, escMd };
+// Exported for testing and internal reuse
+export { readProps, loadConfig, resolveIssuesPath, buildTextTable, buildMarkdown, buildJson, escapeRegExp, trimSlash, pad, escMd, isSonarCloud, fetchIssuesDirect };

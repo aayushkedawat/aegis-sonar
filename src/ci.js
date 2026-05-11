@@ -24,27 +24,39 @@ function getToken() {
   return process.env.GITHUB_TOKEN || "";
 }
 
+const SEV_ICON = { BLOCKER: "🔴", CRITICAL: "🔴", MAJOR: "🟡", MINOR: "🔵", INFO: "⚪" };
+const SEV_ORDER = ["BLOCKER", "CRITICAL", "MAJOR", "MINOR", "INFO"];
+
+function severitySummary(bySeverity = {}) {
+  return SEV_ORDER
+    .filter((s) => bySeverity[s])
+    .map((s) => (SEV_ICON[s] || "⚪") + " " + bySeverity[s] + " " + s)
+    .join(" · ");
+}
+
 function buildPassBody(projectKey, serverUrl) {
   return [
     "## Aegis — Quality Gate passed ✅",
     "",
-    `**Project:** \`${projectKey}\`  `,
-    `**Server:** ${serverUrl}`,
+    `**Project:** \`${projectKey}\` · **Server:** ${serverUrl}`,
   ].join("\n");
 }
 
-function buildFailBody(projectKey, serverUrl, list, format) {
+function buildFailBody(projectKey, serverUrl, list) {
+  const summary = severitySummary(list.bySeverity);
   const lines = [
     "## Aegis — Quality Gate failed ❌",
     "",
-    `**Project:** \`${projectKey}\`  `,
-    `**Server:** ${serverUrl}  `,
-    `**Issues found:** ${list.count}`,
+    `**Project:** \`${projectKey}\` · **Server:** ${serverUrl}`,
+    `**Issues:** ${list.total ?? list.count}` + (summary ? " — " + summary : ""),
     "",
   ];
 
   if (list.count > 0) {
+    lines.push("<details>");
+    lines.push("<summary>View issues</summary>", "");
     lines.push(list.buildPayload("md"));
+    lines.push("</details>");
   }
 
   return lines.join("\n");
@@ -95,7 +107,7 @@ export async function postCiComment({ passed, projectKey, serverUrl, list, forma
 
   const body = passed
     ? buildPassBody(projectKey, serverUrl)
-    : buildFailBody(projectKey, serverUrl, list, format);
+    : buildFailBody(projectKey, serverUrl, list);
 
   await upsertComment(repo, prNumber, token, body);
 }

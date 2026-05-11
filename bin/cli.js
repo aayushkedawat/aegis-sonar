@@ -2,6 +2,8 @@
 import minimist from "minimist";
 import { initHook } from "../src/init.js";
 import { run } from "../src/run.js";
+import { status } from "../src/status.js";
+import { watch } from "../src/watch.js";
 import { uninstall } from "../src/uninstall.js";
 import { doctor } from "../src/doctor.js";
 import { verifyHooks } from "../src/verify-hooks.js";
@@ -10,17 +12,11 @@ const [, , rawCmd, ...rest] = process.argv;
 
 const argv = minimist(rest, {
   boolean: [
-    "help",
-    "h",
-    "version",
-    "v",
-    "preview",
-    "dry-run",
-    "verbose",
-    "print-issues",
-    "color",
-    "no-color",
-    "scaffold",
+    "help", "h", "version", "v",
+    "preview", "dry-run", "verbose",
+    "print-issues", "color", "no-color",
+    "scaffold", "force", "install", "uninstall", "no-block",
+    "from-hook",
   ],
   string: ["base", "cwd", "format", "hooksPath"],
   alias: { h: "help", v: "version" },
@@ -29,12 +25,14 @@ const argv = minimist(rest, {
 function printHelp() {
   console.log(`
 Usage:
-  npx aegis init [--hooksPath <dir>] [--scaffold]
+  npx aegis init                                         Interactive setup wizard
+  npx aegis init [--hooksPath <dir>] [--scaffold]        Non-interactive (CI/scripts)
   npx aegis run [--preview] [--base <branch>] [--cwd <dir>] [--dry-run] [--verbose] [--format text|md|json] [--print-issues]
-  npx aegis uninstall
+  npx aegis status [--format text|md|json]               Compact issue summary (no scan)
+  npx aegis watch                                        Live status on file changes
   npx aegis doctor
+  npx aegis uninstall
   npx aegis verify-hooks [--install] [--uninstall] [--no-block]
-
 
 Options:
   --preview        Scan only changed files since base branch
@@ -42,8 +40,8 @@ Options:
   --cwd <dir>      Run in a different working directory
   --dry-run        Fetch existing issues without running scanner
   --verbose        Show full command and debug info
-  --format         Output format for issues file (text, md, json)
-  --print-issues   Print issues to console in addition to saving file
+  --format         Output format: text | md | json
+  --print-issues   Also print issues to console (in addition to file)
   --color          Force colored output
   --no-color       Disable colored output
   -h, --help       Show this help
@@ -53,7 +51,6 @@ Options:
 
 const cmd = (rawCmd || "").trim();
 
-// Global flags
 if (argv.version) {
   const v = process.env.npm_package_version || "unknown";
   console.log(`aegis-sonar ${v}`);
@@ -65,7 +62,6 @@ if (argv.help || !cmd) {
   process.exit(0);
 }
 
-// Top-level await command dispatch
 try {
   switch (cmd) {
     case "init":
@@ -73,6 +69,12 @@ try {
       break;
     case "run":
       await run(argv);
+      break;
+    case "status":
+      await status(argv);
+      break;
+    case "watch":
+      await watch(argv);
       break;
     case "uninstall":
       await uninstall(argv);

@@ -52,12 +52,18 @@ The `publish` GitHub Actions workflow triggers on version tags and publishes to 
 | File | Command | Responsibility |
 |---|---|---|
 | `src/run.js` | `aegis run` | Runs sonar-scanner, polls Quality Gate, fetches issues, writes report files |
-| `src/init.js` | `aegis init` | Scaffolds `pre-push`/`pre-push.cmd` hooks, `sonar-project.properties`, `.aegisrc.json` |
+| `src/status.js` | `aegis status` | Compact severity summary — fetches issues without scanning, exits 0 |
+| `src/watch.js` | `aegis watch` | Runs `status` on startup then re-runs on file changes (debounced 2s) |
+| `src/init.js` | `aegis init` | Interactive setup wizard (TTY) or non-interactive scaffolding; always updates `.gitignore` |
 | `src/doctor.js` | `aegis doctor` | Checks scanner on PATH, `SONAR_TOKEN`, server reachability, token validity, project access, hook presence |
 | `src/uninstall.js` | `aegis uninstall` | Removes the managed pre-push hook |
 | `src/verify-hooks.js` | `aegis verify-hooks` | Installs/uninstalls a temporary test hook to verify GUI clients fire hooks |
 | `src/ci.js` | (library) | GitHub Actions PR comment integration — called automatically when `GITHUB_ACTIONS=true` |
 | `src/colors.js` | (library) | Shared `c` color helper and `applyColorMode`; imported by all command modules |
+
+### Console output format
+
+`fetchIssuesDirect` returns issues grouped by file for readable terminal output. Each file is a header line followed by indented `:line  SEVERITY  TYPE  message  url` rows. File paths are printed as `filename:line` so terminals and IDEs render them as clickable links. The return value includes `bySeverity` (map of severity → count) and `total` (server total) in addition to `count` (page size) and `buildPayload(fmt)`.
 
 ### Issue fetch flow in `run.js`
 
