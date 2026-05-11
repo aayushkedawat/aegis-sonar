@@ -2,46 +2,9 @@ import fs from "node:fs";
 import { execa } from "execa";
 import which from "which";
 import path from "node:path";
-import kleur from "kleur";
+import { c, applyColorMode } from "./colors.js";
 
-/* ------------------------- color controls (default ON) ------------------------- */
-
-let useColor = computeColorEnabled();
 const MAX_PRINT = 300;
-
-function computeColorEnabled() {
-  if (process.env.NO_COLOR) return false; // hard off
-  if (process.env.AEGIS_COLOR === "0") return false;
-  if (process.env.AEGIS_COLOR === "1") return true;
-  return true; // default ON
-}
-
-export function applyColorMode(argv = {}) {
-  if ("no-color" in argv) useColor = false;
-  if ("color" in argv) useColor = true;
-}
-
-const c = {
-  ok: (s) => (useColor ? kleur.green().bold(s) : s),
-  err: (s) => (useColor ? kleur.red().bold(s) : s),
-  warn: (s) => (useColor ? kleur.yellow().bold(s) : s),
-  info: (s) => (useColor ? kleur.cyan(s) : s),
-  dim: (s) => (useColor ? kleur.dim(s) : s),
-  head: (s) => (useColor ? kleur.bold().underline(s) : s),
-  sev: (sev, s) => {
-    if (!useColor) return s;
-    if (sev === "BLOCKER")
-      return kleur
-        .bgRed()
-        .white()
-        .bold(" " + s + " ");
-    if (sev === "CRITICAL") return kleur.red().bold(s);
-    if (sev === "MAJOR") return kleur.yellow(s);
-    if (sev === "MINOR") return kleur.magenta(s);
-    return kleur.white(s);
-  },
-  link: (s) => (useColor ? kleur.underline().blue(s) : s),
-};
 
 /* --------------------------------- utils --------------------------------- */
 
@@ -559,9 +522,7 @@ async function listIssuesFromTask(cfg) {
 }
 
 function escapeRegExp(s) {
-  // regex is required; replaceAll would not be equivalent here
-  // return String(s).replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return escapeRegExp(String(s));
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function prop(txt, key) {
@@ -685,3 +646,6 @@ function escMd(s) {
   // prefer replaceAll + String.raw for the backslash
   return String(s ?? "").replaceAll("|", String.raw`\|`);
 }
+
+// Exported for testing
+export { readProps, loadConfig, resolveIssuesPath, buildTextTable, buildMarkdown, buildJson, escapeRegExp, trimSlash, pad, escMd };

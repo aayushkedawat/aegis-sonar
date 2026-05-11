@@ -2,18 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execa } from "execa";
-import kleur from "kleur";
-
-/* ------------------------------ colors ------------------------------ */
-const useColor = !process.env.NO_COLOR;
-const c = {
-  ok: (s) => (useColor ? kleur.green().bold(s) : s),
-  err: (s) => (useColor ? kleur.red().bold(s) : s),
-  warn: (s) => (useColor ? kleur.yellow().bold(s) : s),
-  info: (s) => (useColor ? kleur.cyan(s) : s),
-  dim: (s) => (useColor ? kleur.dim(s) : s),
-  head: (s) => (useColor ? kleur.bold().underline(s) : s),
-};
+import { c } from "./colors.js";
 
 /* ------------------------------ helpers ----------------------------- */
 

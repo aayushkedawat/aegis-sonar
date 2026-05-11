@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm ci                   # install dependencies
 npm run lint             # lint (placeholder – wire up a real linter here when adding one)
-npm test                 # test (placeholder – currently just prints "ok")
+npm test                 # run test suite (node:test, no extra deps)
 ```
 
 There is **no build step** – the package is pure ESM and runs directly in Node.
@@ -76,7 +76,7 @@ On Quality Gate failure, `run.js` attempts two strategies to collect issues:
 
 ### Color helpers
 
-Each module defines its own local `c` object wrapping `kleur`. Colors are **on by default** and respect both `--no-color` CLI flag and the `NO_COLOR` / `AEGIS_COLOR` env vars. `run.js` has a module-level `useColor` that `applyColorMode(argv)` mutates; other modules compute it at import time from `process.stdout.isTTY`.
+All color logic lives in `src/colors.js`, which exports a shared `c` object and `applyColorMode(argv)`. Colors are **on by default** and respect `--no-color`, `NO_COLOR`, and `AEGIS_COLOR` env vars. `applyColorMode` is called once at the start of `run()` to apply CLI flags; other commands import `c` directly without calling it.
 
 ### Templates
 
@@ -90,5 +90,5 @@ Each module defines its own local `c` object wrapping `kleur`. Colors are **on b
 - **Conventional Commits** for all commit messages (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`, etc.).
 - Branches: `feat/<short-name>` or `fix/<short-name>` off `main`.
 - When adding a new report format: extend `resolveIssuesPath` (the extension map) and add a builder function alongside `buildTextTable`/`buildMarkdown`/`buildJson`.
-- The `prop(txt, key)` helper in `run.js` has a known recursive bug (`escapeRegExp` calls itself). Do not rely on it for keys containing regex metacharacters until fixed.
+- Tests live in `test/` and use Node's built-in `node:test` runner — no extra test dependencies. Add new test files as `test/*.test.js`. Pure functions that are testable should be exported from the bottom of their module under a comment `// Exported for testing`.
 - CI tests on Node 18 and 20. Ensure changes stay compatible with both.
