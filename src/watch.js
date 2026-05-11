@@ -4,6 +4,33 @@ import path from "node:path";
 import { c, applyColorMode } from "./colors.js";
 import { status } from "./status.js";
 
+const TASK_FILE = ".scannerwork/report-task.txt";
+const STALE_MS  = 60 * 60 * 1000; // warn after 1 hour
+
+function lastScanAge() {
+  try {
+    const mtime = fs.statSync(TASK_FILE).mtimeMs;
+    const ageMs = Date.now() - mtime;
+    const mins  = Math.floor(ageMs / 60_000);
+    if (mins < 60) return { label: mins + "m ago", stale: false };
+    const hrs = Math.floor(mins / 60);
+    return { label: hrs + "h ago", stale: ageMs > STALE_MS };
+  } catch {
+    return { label: "no scan found", stale: true };
+  }
+}
+
+function printScanAge() {
+  const { label, stale } = lastScanAge();
+  const age = stale ? c.warn("⚠  Last scan: " + label) : c.dim("Last scan: " + label);
+  if (stale) {
+    console.log(age);
+    console.log(c.dim("  Results may be stale. Run"), c.info("aegis run"), c.dim("to refresh."));
+  } else {
+    console.log(age);
+  }
+}
+
 const IGNORED = new Set([".git", "node_modules", ".scannerwork", ".next", "dist", "build"]);
 
 function shouldIgnore(filename) {
@@ -28,6 +55,7 @@ export async function watch(argv = {}) {
 
   // Run initial status check
   await status(argv).catch(() => {});
+  printScanAge();
 
   let debounceTimer = null;
   let running = false;
@@ -38,6 +66,7 @@ export async function watch(argv = {}) {
     console.log(c.dim("\n── file changed · re-checking ──\n"));
     try {
       await status(argv);
+      printScanAge();
     } catch {}
     running = false;
   }

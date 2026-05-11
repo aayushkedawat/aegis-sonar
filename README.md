@@ -5,26 +5,23 @@
 [![Downloads](https://img.shields.io/npm/dm/aegis-sonar.svg)](https://www.npmjs.com/package/aegis-sonar)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-**Aegis** is a developer-first CLI tool to enforce **SonarQube Quality Gates** locally, before code is pushed or deployed.  
+**Aegis** is a developer-first CLI tool to enforce **SonarQube / SonarCloud Quality Gates** locally, before code is pushed or deployed.  
 Think of it as a **shield** between sloppy commits and your production pipelines.
 
 ---
 
 ## ✨ Features
 
-- **Pre-push guard** → blocks `git push` if SonarQube Quality Gate fails
-- **Preview mode** → scan only changed JS/TS files for quick feedback
-- **Dry-run mode** → fetch current Sonar issues without running analysis
-- **Developer friendly** → colorized console output, detailed issue reports
-- **Reports** → export to `.txt`, `.md`, or `.json` with metadata
-- **Metadata included** → timestamp, filters used, Node/CLI version
-- **Configurable** → `.aegisrc.json` for severities, types, limits, etc.
-- **Doctor** → sanity-checks your environment (scanner, token, project, server health)
-- **Optional console printing** → keep console clean by default, opt-in with `--print-issues`
-- Verify hooks in Desktop/GUI:
-  - Install temp test hook: `npx aegis verify-hooks --install`
-  - Push from your GUI (it will block once and log a timestamp)
-  - Restore original hook: `npx aegis verify-hooks --uninstall`
+- **Pre-push guard** → blocks `git push` if Quality Gate fails
+- **Live watch mode** → re-checks issues on every file save, no manual triggers
+- **Instant status** → compact severity summary without running a scan
+- **Preview mode** → scan only changed files for faster feedback
+- **SonarCloud support** → auto-detected from `sonar.host.url`
+- **Multi-language** → works with any language sonar-scanner supports
+- **GitHub Actions** → posts a PR comment automatically on pass/fail
+- **Reports** → export to `.txt`, `.md`, or `.json` with full metadata
+- **Doctor** → sanity-checks your environment with per-OS fix instructions
+- **Interactive setup** → wizard prompts and validates your config on first run
 
 ---
 
@@ -40,67 +37,89 @@ Or project-local:
 npm install --save-dev aegis-sonar
 ```
 
+### Install sonar-scanner
+
+| Platform | Command |
+|---|---|
+| macOS | `brew install sonar-scanner` |
+| Windows | `choco install sonarscanner-msbuild-net46` |
+| Linux | Download from [docs.sonarsource.com](https://docs.sonarsource.com/sonarqube/latest/analyzing-source-code/scanners/sonarscanner/) or use `docker run sonarsource/sonar-scanner-cli` |
+
 ---
 
 ## ⚡ Quick Start
 
-1. Ensure you have:
-
-   - `sonar-scanner` installed (e.g., `brew install sonar-scanner`)
-   - `SONAR_TOKEN` exported as env var
-   - `sonar-project.properties` at repo root with:
-     ```properties
-     sonar.host.url=https://your-sonarqube.server
-     sonar.projectKey=my_project
-     ```
-
-2. Run manually:
-
 ```bash
-npx aegis run
+npx aegis init
 ```
 
-3. Add as a pre-push hook:
+The interactive wizard will ask for your server URL, project key, and token — and validate them live before writing any files. It also sets up the pre-push hook and updates `.gitignore` automatically.
 
-```bash
-npx aegis init --scaffold
-```
-
-Now every `git push` runs Aegis first.
+**For SonarCloud**, use `https://sonarcloud.io` as the host and provide your organization slug when prompted.
 
 ---
-
-## 🖨️ Printing issues to console
-
-By default, Aegis **does not print all issues to console** (to avoid noise & stack errors on large repos).  
-Instead, it saves issues to a file (configured via `.aegisrc.json` or defaults to `sonar-issues.txt`).
-
-If you want to also print issues to console, add `--print-issues`:
-
-```bash
-# Print issues after a normal run
-npx aegis run --print-issues
-
-# Print issues on dry-run
-npx aegis run --dry-run --print-issues
-```
-
-Console output is capped (default: 300 issues) to stay readable.
 
 ## 🛠️ Commands
 
 ```bash
-npx aegis run           # full scan (blocks on Quality Gate)
-npx aegis run --preview # scan only changed files
-npx aegis run --dry-run # fetch issues without scanning
-npx aegis doctor        # check scanner, token, project, server health
+npx aegis init                    # Interactive setup wizard (TTY) or file scaffold (CI)
+npx aegis run                     # Full scan — blocks push on Quality Gate failure
+npx aegis run --preview           # Scan only files changed since base branch
+npx aegis run --dry-run           # Fetch existing issues without running scanner
+npx aegis status                  # Compact severity summary (no scan, exits 0)
+npx aegis watch                   # Live status — re-checks on every file save
+npx aegis doctor                  # Check scanner, token, project, server health
+npx aegis uninstall               # Remove the managed pre-push hook
 ```
+
+### `aegis status` — quick issue summary
+
+```
+📊 Aegis status  SonarCloud · my-org_my-repo
+
+  🔴  BLOCKER       3  ███
+  🔴  CRITICAL     12  ████████████
+  🟡  MAJOR        27  ████████████████████████████
+
+  ✖ Quality Gate likely failing  (42 issues shown, 42 total)
+```
+
+### `aegis watch` — live feedback
+
+Runs `status` on startup, then watches for file saves and re-runs automatically (2 s debounce). Shows a staleness warning when the last scan is over an hour old.
+
+```
+👁  Aegis watch  Ctrl+C to stop
+
+📊 Aegis status  SonarQube · my-project
+  ...
+Last scan: 4m ago
+
+── file changed · re-checking ──
+```
+
+---
+
+## 🖨️ Console output
+
+By default Aegis saves issues to a file and does not flood the terminal. Add `--print-issues` to also print them, grouped by file with clickable `file:line` links:
+
+```
+src/auth.js  (3 issues)
+  :42  CRITICAL  BUG        null dereference  → https://sonar.example.com/...
+  :87  MAJOR     CODE_SMELL  unused variable  → https://sonar.example.com/...
+
+src/api.js  (1 issue)
+  :12  BLOCKER  VULNERABILITY  hardcoded secret  → https://sonar.example.com/...
+```
+
+Console output is capped at 300 lines to stay readable.
 
 ---
 
 ## 📄 Reports
 
-Aegis saves scan results to disk:
+Aegis saves scan results to disk (auto-added to `.gitignore` by `aegis init`):
 
 - `sonar-report.txt` → raw scanner output
 - `sonar-issues.{txt|md|json}` → formatted issues (based on `--format`)
@@ -124,7 +143,7 @@ Each report includes metadata:
 
 ## ⚙️ Config
 
-Optional `.aegisrc.json`:
+Optional `.aegisrc.json` (created by `aegis init`):
 
 ```json
 {
@@ -132,43 +151,46 @@ Optional `.aegisrc.json`:
   "types": "BUG,VULNERABILITY",
   "max": 200,
   "issuesFile": "sonar-issues",
-  "format": "md"
+  "format": "md",
+  "previewExtensions": ".java,.kt"
 }
 ```
+
+`previewExtensions` restricts `--preview` mode to specific file types. Set to `null` (the default) to include all changed files.
 
 ---
 
 ## 🔍 Troubleshooting
 
-### Doctor shows `✖ Project lookup failed HTTP 403` or `✖ Server health check failed HTTP 403`
+### `✖ Project lookup failed HTTP 403` or `✖ Server health check failed HTTP 403`
 
-- ✔ Token valid → means your token works
-- ✖ Project lookup 403 → your token doesn’t have **Browse / See Source Code** permissions for that project
-- ✖ Health check 403 → token user doesn’t have **System Admin / System Health** rights
+- Token valid → your token authenticates successfully
+- Project 403 → token lacks **Browse / See Source Code** permission on the project
+- Health 403 → token user lacks **System Admin** rights (health check is optional)
 
-**Fix:**  
-Create or use a token from a user with **at least “Browse” permissions** on the project.  
-For health checks, system-level permissions may be required (optional; you can skip health if not needed).
+**Fix:** use a token with at least "Browse" permission on the project.
+
+### `aegis watch` shows stale results
+
+Watch mode shows the current server state — it does not run a local scan. If you've fixed issues locally, run `aegis run` to push a fresh scan to the server, then the watch output will update.
 
 ---
 
 ## ⚠️ Known Limitations
 
-- Currently supports only **JavaScript/TypeScript** projects (`.js`, `.ts`, `.jsx`, `.tsx`, `.mjs`, `.cjs`).
-- Requires **SonarQube server** accessible from your machine (no SonarCloud API yet).
-- Requires **`sonar-scanner`** installed locally and on `PATH`.
-- Pre-push hook integration tested only on **Git** (not Mercurial or others).
-- Reports are **non-incremental**: a new run overwrites the previous issue file.
-- Flutter/Dart, Java, and other stacks are **not yet supported** (planned).
+- Requires `sonar-scanner` installed and on `PATH` (see install table above).
+- Requires a SonarQube or SonarCloud server reachable from your machine.
+- Reports are non-incremental: each run overwrites the previous issue file.
+- Pre-push hook tested on Git only (not Mercurial or others).
 
 ---
 
 ## 📦 Roadmap
 
-- [ ] Flutter/Dart support (planned)
+- [ ] VS Code extension (status bar count + inline issue markers)
 - [ ] HTML/CSV report formats
-- [ ] VS Code extension wrapper
-- [ ] GitHub Action for PR comments
+- [ ] Local scan in watch mode (run sonar-scanner on save, no server round-trip latency)
+- [ ] Flutter/Dart support
 
 ---
 

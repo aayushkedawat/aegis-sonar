@@ -318,11 +318,18 @@ function ensureProps() {
   return { serverUrl, projectKey, organization };
 }
 
+function scannerInstallHint() {
+  const p = process.platform;
+  if (p === "darwin") return "Install: brew install sonar-scanner";
+  if (p === "win32")  return "Install: choco install sonarscanner-msbuild-net46  (or download from docs.sonarsource.com)";
+  return "Install: download from docs.sonarsource.com/sonarqube/latest/analyzing-source-code/scanners/sonarscanner/ or use Docker image sonarsource/sonar-scanner-cli";
+}
+
 async function ensureScannerAndToken() {
   try {
     await which("sonar-scanner");
   } catch {
-    throw new Error("sonar-scanner not found on PATH");
+    throw new Error("sonar-scanner not found on PATH. " + scannerInstallHint());
   }
   need("SONAR_TOKEN");
 }

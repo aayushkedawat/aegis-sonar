@@ -24,6 +24,23 @@ function trimSlash(u) {
   return u?.endsWith("/") ? u.slice(0, -1) : u;
 }
 
+/* ---------------------- install hint ---------------------- */
+function scannerInstallHint() {
+  const p = process.platform;
+  if (p === "darwin") {
+    console.log(c.info("ℹ"), "Install (macOS):", c.dim("brew install sonar-scanner"));
+  } else if (p === "win32") {
+    console.log(c.info("ℹ"), "Install (Windows):", c.dim("choco install sonarscanner-msbuild-net46"));
+    console.log(c.info("ℹ"), "Or download from:", c.dim("https://docs.sonarsource.com/sonarqube/latest/analyzing-source-code/scanners/sonarscanner/"));
+  } else {
+    console.log(c.info("ℹ"), "Install (Linux / manual):");
+    console.log(c.dim("  curl -sSLo sonar.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610-linux-x64.zip"));
+    console.log(c.dim("  unzip sonar.zip && sudo mv sonar-scanner-* /opt/sonar-scanner"));
+    console.log(c.dim("  echo 'export PATH=/opt/sonar-scanner/bin:$PATH' >> ~/.bashrc"));
+    console.log(c.info("ℹ"), "Or use Docker:", c.dim("sonarsource/sonar-scanner-cli"));
+  }
+}
+
 /* ---------------------- checks (split out) ---------------------- */
 async function checkScanner() {
   try {
@@ -32,11 +49,7 @@ async function checkScanner() {
     return true;
   } catch {
     console.error(c.err("✖"), "sonar-scanner not found on PATH");
-    console.log(
-      c.info("ℹ"),
-      "Install (macOS):",
-      c.dim("brew install sonar-scanner")
-    );
+    scannerInstallHint();
     return false;
   }
 }
