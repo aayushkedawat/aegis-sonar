@@ -24,7 +24,7 @@
     "which": "^4.0.0"
   },
   "scripts": {
-    "test": "node -e \"console.log('ok')\"",
+    "test": "node --test test/*.test.js",
     "lint": "echo \"(add your linter here)\" && exit 0",
     "release:patch": "npm version patch -m \"chore(release): %s\" && git push --follow-tags",
     "release:minor": "npm version minor -m \"chore(release): %s\" && git push --follow-tags",

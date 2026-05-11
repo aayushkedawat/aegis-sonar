@@ -1,17 +1,36 @@
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 import { execa } from "execa";
 
+async function getHooksPath() {
+  try {
+    const { stdout } = await execa("git", ["config", "core.hooksPath"]);
+    const hp = (stdout || "").trim();
+    if (hp) return hp;
+  } catch {}
+  return ".git/hooks";
+}
+
+function removeIfManaged(filePath) {
+  if (!fs.existsSync(filePath)) return false;
+  const content = fs.readFileSync(filePath, "utf-8");
+  if (!content.includes("aegis run")) return false;
+  fs.unlinkSync(filePath);
+  return true;
+}
+
 export async function uninstall() {
-  const { stdout: root } = await execa("git", ["rev-parse", "--show-toplevel"]);
-  const hook = path.join(root, ".git", "hooks", "pre-push");
-  if (fs.existsSync(hook)) {
-    const content = fs.readFileSync(hook, "utf-8");
-    if (content.includes("Aegis (aegis-sonar)")) {
-      fs.unlinkSync(hook);
-      console.log("🧹 Removed pre-push hook");
-      return;
-    }
+  const hooksPath = await getHooksPath();
+  const posix = path.join(hooksPath, "pre-push");
+  const win   = path.join(hooksPath, "pre-push.cmd");
+
+  const removedPosix = removeIfManaged(posix);
+  const removedWin   = removeIfManaged(win);
+
+  if (removedPosix || removedWin) {
+    if (removedPosix) console.log("🧹 Removed", posix);
+    if (removedWin)   console.log("🧹 Removed", win);
+  } else {
+    console.log("ℹ No managed Aegis pre-push hook found in", hooksPath);
   }
-  console.log("ℹ No managed pre-push hook found");
 }

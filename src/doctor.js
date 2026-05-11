@@ -2,18 +2,7 @@
 import fs from "node:fs";
 import { execa } from "execa";
 import which from "which";
-import kleur from "kleur";
-
-/* ---------------------- color helpers ---------------------- */
-const useColor = !!process.stdout?.isTTY && !process.env.NO_COLOR;
-const c = {
-  ok: (s) => (useColor ? kleur.green().bold(s) : s),
-  err: (s) => (useColor ? kleur.red().bold(s) : s),
-  warn: (s) => (useColor ? kleur.yellow().bold(s) : s),
-  info: (s) => (useColor ? kleur.cyan(s) : s),
-  dim: (s) => (useColor ? kleur.dim(s) : s),
-  head: (s) => (useColor ? kleur.bold().underline(s) : s),
-};
+import { c } from "./colors.js";
 
 /* ---------------------- small utils ---------------------- */
 function readProperties(file) {
@@ -35,6 +24,23 @@ function trimSlash(u) {
   return u?.endsWith("/") ? u.slice(0, -1) : u;
 }
 
+/* ---------------------- install hint ---------------------- */
+function scannerInstallHint() {
+  const p = process.platform;
+  if (p === "darwin") {
+    console.log(c.info("ℹ"), "Install (macOS):", c.dim("brew install sonar-scanner"));
+  } else if (p === "win32") {
+    console.log(c.info("ℹ"), "Install (Windows):", c.dim("choco install sonarscanner-msbuild-net46"));
+    console.log(c.info("ℹ"), "Or download from:", c.dim("https://docs.sonarsource.com/sonarqube/latest/analyzing-source-code/scanners/sonarscanner/"));
+  } else {
+    console.log(c.info("ℹ"), "Install (Linux / manual):");
+    console.log(c.dim("  curl -sSLo sonar.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610-linux-x64.zip"));
+    console.log(c.dim("  unzip sonar.zip && sudo mv sonar-scanner-* /opt/sonar-scanner"));
+    console.log(c.dim("  echo 'export PATH=/opt/sonar-scanner/bin:$PATH' >> ~/.bashrc"));
+    console.log(c.info("ℹ"), "Or use Docker:", c.dim("sonarsource/sonar-scanner-cli"));
+  }
+}
+
 /* ---------------------- checks (split out) ---------------------- */
 async function checkScanner() {
   try {
@@ -43,11 +49,7 @@ async function checkScanner() {
     return true;
   } catch {
     console.error(c.err("✖"), "sonar-scanner not found on PATH");
-    console.log(
-      c.info("ℹ"),
-      "Install (macOS):",
-      c.dim("brew install sonar-scanner")
-    );
+    scannerInstallHint();
     return false;
   }
 }
@@ -76,6 +78,8 @@ function checkProps() {
 
   const host = props["sonar.host.url"] || "";
   const projectKey = props["sonar.projectKey"] || "";
+  const organization = props["sonar.organization"] || "";
+  const sonarCloud = host.toLowerCase().includes("sonarcloud.io");
 
   if (host) {
     console.log(c.ok("✔"), "sonar.host.url", c.dim(`→ ${host}`));
@@ -89,7 +93,15 @@ function checkProps() {
     console.error(c.err("✖"), "sonar.projectKey missing");
   }
 
-  return { ok: Boolean(host && projectKey), host, projectKey };
+  if (sonarCloud) {
+    if (organization) {
+      console.log(c.ok("✔"), "sonar.organization", c.dim(`→ ${organization}`));
+    } else {
+      console.error(c.err("✖"), "sonar.organization missing (required for SonarCloud)");
+    }
+  }
+
+  return { ok: Boolean(host && projectKey && (!sonarCloud || organization)), host, projectKey };
 }
 
 function buildAuthHeader(token) {
