@@ -3,6 +3,7 @@ import { execa } from "execa";
 import which from "which";
 import path from "node:path";
 import { c, applyColorMode } from "./colors.js";
+import { postCiComment } from "./ci.js";
 
 const MAX_PRINT = 300;
 
@@ -37,6 +38,8 @@ function loadConfig(argvFormat) {
     max: 500,
     issuesFile: "sonar-issues", // base name; extension will be added by format
     format: "text",
+    // null means "all changed files"; set to a comma-separated list to restrict
+    previewExtensions: null,
   };
   const merged = { ...defaults };
   for (const p of [".aegisrc.json", ".aegisrc.local.json"]) {
@@ -69,7 +72,7 @@ function printIssuesToConsole(list) {
   }
 }
 
-async function getChangedFiles(baseBranch) {
+async function getChangedFiles(baseBranch, extensionFilter = null) {
   let base = baseBranch;
   if (!base) {
     for (const cand of [
@@ -95,7 +98,10 @@ async function getChangedFiles(baseBranch) {
   const diffRange = mergeBase ? mergeBase + "...HEAD" : base + "...HEAD";
   const { stdout } = await execa("git", ["diff", "--name-only", diffRange]);
   const all = stdout.split(/\r?\n/).filter(Boolean);
-  const keep = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"]);
+  if (!extensionFilter) return all.filter((f) => fs.existsSync(f));
+  const keep = new Set(
+    extensionFilter.split(",").map((e) => (e.startsWith(".") ? e.trim() : "." + e.trim()))
+  );
   return all.filter((f) => keep.has(path.extname(f)) && fs.existsSync(f));
 }
 
@@ -279,6 +285,10 @@ function hasPropsFile() {
   return fs.existsSync("sonar-project.properties");
 }
 
+function isSonarCloud(serverUrl) {
+  return serverUrl.toLowerCase().includes("sonarcloud.io");
+}
+
 function ensureProps() {
   if (!hasPropsFile()) {
     console.log(
@@ -290,6 +300,7 @@ function ensureProps() {
   const props = readProps();
   const serverUrl = trimSlash(props?.["sonar.host.url"] || "");
   const projectKey = props?.["sonar.projectKey"] || "";
+  const organization = props?.["sonar.organization"] || "";
   if (!serverUrl || !projectKey) {
     console.error(
       c.err("✖"),
@@ -297,7 +308,14 @@ function ensureProps() {
     );
     process.exit(1);
   }
-  return { serverUrl, projectKey };
+  if (isSonarCloud(serverUrl) && !organization) {
+    console.error(
+      c.err("✖"),
+      "sonar.organization is required for SonarCloud — add it to sonar-project.properties"
+    );
+    process.exit(1);
+  }
+  return { serverUrl, projectKey, organization };
 }
 
 async function ensureScannerAndToken() {
@@ -309,14 +327,14 @@ async function ensureScannerAndToken() {
   need("SONAR_TOKEN");
 }
 
-async function performDryRun(cfg, serverUrl, projectKey, opts = {}) {
+async function performDryRun(cfg, serverUrl, projectKey, organization, opts = {}) {
   need("SONAR_TOKEN");
   console.log(
     c.head("🧪 Aegis dry-run"),
     c.dim("(no analyzer; fetch existing issues)")
   );
   try {
-    const list = await fetchIssuesDirect(cfg, serverUrl, projectKey);
+    const list = await fetchIssuesDirect(cfg, serverUrl, projectKey, organization);
 
     if (opts.printIssues) {
       printIssuesToConsole(list);
@@ -337,13 +355,13 @@ async function performDryRun(cfg, serverUrl, projectKey, opts = {}) {
   }
 }
 
-async function buildPreviewProps(argv) {
+async function buildPreviewProps(argv, cfg = {}) {
   if (!argv?.preview) return [];
-  const files = await getChangedFiles(argv?.base);
+  const files = await getChangedFiles(argv?.base, cfg.previewExtensions ?? null);
   if (files.length === 0) {
     console.log(
       c.info("ℹ"),
-      "--preview: no changed JS/TS files detected; skipping scan"
+      "--preview: no changed files detected; skipping scan"
     );
     process.exit(0);
   }
@@ -369,7 +387,7 @@ function handleScanPass(cfg, stdout, opts = {}) {
   if (opts.printIssues) {
     // When requested, read issues produced by the just-finished scan
     listIssuesFromTask(cfg)
-      .then((list) => {
+      .then(async (list) => {
         printIssuesToConsole(list);
         const outPath = resolveIssuesPath(cfg.issuesFile, cfg.format);
         fs.writeFileSync(outPath, formatIssuesFile(cfg.format, list), "utf-8");
@@ -379,16 +397,18 @@ function handleScanPass(cfg, stdout, opts = {}) {
           c.dim(outPath),
           c.info("(" + list.count + " items, format=" + cfg.format + ")")
         );
+        await postCiComment({ passed: true, projectKey: opts.projectKey, serverUrl: opts.serverUrl, list, format: cfg.format }).catch(() => {});
       })
       .catch(() => {
-        // If the task isn’t available for any reason, just keep the success message
         console.log(c.ok("✔"), "Sonar Quality Gate passed");
+        postCiComment({ passed: true, projectKey: opts.projectKey, serverUrl: opts.serverUrl, list: { count: 0, buildPayload: () => "" }, format: cfg.format }).catch(() => {});
       });
   } else {
     // Quiet default: remove any stale issues file (if present)
     const outPath = resolveIssuesPath(cfg.issuesFile, cfg.format);
     if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
     console.log(c.ok("✔"), "Sonar Quality Gate passed");
+    postCiComment({ passed: true, projectKey: opts.projectKey, serverUrl: opts.serverUrl, list: { count: 0, buildPayload: () => "" }, format: cfg.format }).catch(() => {});
   }
 }
 
@@ -417,6 +437,7 @@ async function handleScanFail(cfg, error, opts = {}) {
       c.dim(outPath),
       c.info("(" + list.count + " items, format=" + cfg.format + ")")
     );
+    await postCiComment({ passed: false, projectKey: opts.projectKey, serverUrl: opts.serverUrl, list, format: cfg.format }).catch(() => {});
     process.exit(1);
   } catch (error) {
     console.warn(
@@ -431,10 +452,11 @@ async function handleScanFail(cfg, error, opts = {}) {
     const props = readProps();
     const serverUrl = trimSlash(props?.["sonar.host.url"] || "");
     const projectKey = props?.["sonar.projectKey"] || "";
+    const organization = props?.["sonar.organization"] || "";
     if (!serverUrl || !projectKey)
       throw new Error("Missing sonar.host.url/projectKey");
 
-    const list = await fetchIssuesDirect(cfg, serverUrl, projectKey);
+    const list = await fetchIssuesDirect(cfg, serverUrl, projectKey, organization);
 
     if (opts.printIssues) {
       printIssuesToConsole(list);
@@ -448,6 +470,7 @@ async function handleScanFail(cfg, error, opts = {}) {
       c.dim(outPath),
       c.info("(" + list.count + " items, format=" + cfg.format + ")")
     );
+    await postCiComment({ passed: false, projectKey: opts.projectKey, serverUrl: opts.serverUrl, list, format: cfg.format }).catch(() => {});
   } catch (error) {
     console.warn(
       c.info("ℹ"),
@@ -471,23 +494,24 @@ export async function run(argv = {}) {
   applyColorMode(argv); // honor --color / --no-color, default ON
   if (argv?.cwd) process.chdir(argv.cwd);
 
-  const { serverUrl, projectKey } = ensureProps();
+  const { serverUrl, projectKey, organization } = ensureProps();
   const cfg = loadConfig(argv?.format);
 
   if (argv?.["dry-run"]) {
-    await performDryRun(cfg, serverUrl, projectKey, {
+    await performDryRun(cfg, serverUrl, projectKey, organization, {
       printIssues: shouldPrintIssues(argv),
     });
     return;
   }
 
   await ensureScannerAndToken();
-  const previewProps = await buildPreviewProps(argv);
+  const previewProps = await buildPreviewProps(argv, cfg);
 
   const cmd = "sonar-scanner";
   const args = [
     "-Dsonar.qualitygate.wait=true",
     "-Dsonar.login=" + process.env.SONAR_TOKEN,
+    ...(organization ? ["-Dsonar.organization=" + organization] : []),
     ...previewProps,
   ];
 
@@ -495,14 +519,16 @@ export async function run(argv = {}) {
     console.log(c.info("🔧 Command:"), c.dim([cmd, ...args].join(" ")));
   }
 
-  console.log(c.head("▶ SonarQube scan"), c.dim("(blocking on Quality Gate)"));
+  const scanLabel = isSonarCloud(serverUrl) ? "SonarCloud scan" : "SonarQube scan";
+  console.log(c.head("▶ " + scanLabel), c.dim("(blocking on Quality Gate)"));
+  const scanOpts = { printIssues: shouldPrintIssues(argv), projectKey, serverUrl };
   try {
     const { stdout } = await execa(cmd, args, {
       stdio: ["inherit", "pipe", "inherit"],
     });
-    handleScanPass(cfg, stdout, { printIssues: shouldPrintIssues(argv) });
+    handleScanPass(cfg, stdout, scanOpts);
   } catch (e) {
-    await handleScanFail(cfg, e, { printIssues: shouldPrintIssues(argv) });
+    await handleScanFail(cfg, e, scanOpts);
   }
 }
 
@@ -518,7 +544,8 @@ async function listIssuesFromTask(cfg) {
   if (!serverUrl || !projectKey) {
     throw new Error("Missing serverUrl/projectKey in report-task.txt");
   }
-  return await fetchIssuesDirect(cfg, serverUrl, projectKey);
+  const organization = readProps()?.["sonar.organization"] || "";
+  return await fetchIssuesDirect(cfg, serverUrl, projectKey, organization);
 }
 
 function escapeRegExp(s) {
@@ -532,7 +559,7 @@ function prop(txt, key) {
   return m?.[1]?.trim() ?? null;
 }
 
-async function fetchIssuesDirect(cfg, serverUrl, projectKey) {
+async function fetchIssuesDirect(cfg, serverUrl, projectKey, organization = "") {
   const params = new URLSearchParams({
     componentKeys: projectKey,
     resolved: "false",
@@ -540,6 +567,7 @@ async function fetchIssuesDirect(cfg, serverUrl, projectKey) {
     severities: cfg.severities || "BLOCKER,CRITICAL,MAJOR",
     types: cfg.types || "BUG,VULNERABILITY,CODE_SMELL",
   });
+  if (organization) params.set("organization", organization);
 
   const resp = await fetch(
     serverUrl + "/api/issues/search?" + params.toString(),

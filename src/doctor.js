@@ -65,6 +65,8 @@ function checkProps() {
 
   const host = props["sonar.host.url"] || "";
   const projectKey = props["sonar.projectKey"] || "";
+  const organization = props["sonar.organization"] || "";
+  const sonarCloud = host.toLowerCase().includes("sonarcloud.io");
 
   if (host) {
     console.log(c.ok("✔"), "sonar.host.url", c.dim(`→ ${host}`));
@@ -78,7 +80,15 @@ function checkProps() {
     console.error(c.err("✖"), "sonar.projectKey missing");
   }
 
-  return { ok: Boolean(host && projectKey), host, projectKey };
+  if (sonarCloud) {
+    if (organization) {
+      console.log(c.ok("✔"), "sonar.organization", c.dim(`→ ${organization}`));
+    } else {
+      console.error(c.err("✖"), "sonar.organization missing (required for SonarCloud)");
+    }
+  }
+
+  return { ok: Boolean(host && projectKey && (!sonarCloud || organization)), host, projectKey };
 }
 
 function buildAuthHeader(token) {

@@ -56,6 +56,8 @@ The `publish` GitHub Actions workflow triggers on version tags and publishes to 
 | `src/doctor.js` | `aegis doctor` | Checks scanner on PATH, `SONAR_TOKEN`, server reachability, token validity, project access, hook presence |
 | `src/uninstall.js` | `aegis uninstall` | Removes the managed pre-push hook |
 | `src/verify-hooks.js` | `aegis verify-hooks` | Installs/uninstalls a temporary test hook to verify GUI clients fire hooks |
+| `src/ci.js` | (library) | GitHub Actions PR comment integration — called automatically when `GITHUB_ACTIONS=true` |
+| `src/colors.js` | (library) | Shared `c` color helper and `applyColorMode`; imported by all command modules |
 
 ### Issue fetch flow in `run.js`
 
@@ -70,9 +72,17 @@ On Quality Gate failure, `run.js` attempts two strategies to collect issues:
 
 `run.js` contains three file builders: `buildTextTable`, `buildMarkdown`, `buildJson`. All three accept `{ rows, meta }`. The `meta` object (from `buildMeta`) includes timestamp, project key, server URL, filter summary, and tool/runtime versions. Files written to disk are always plain text – no ANSI escape codes.
 
+### SonarCloud vs SonarQube
+
+`isSonarCloud(serverUrl)` (in `run.js`) detects SonarCloud by checking whether the host URL contains `sonarcloud.io`. When detected, `sonar.organization` is required in `sonar-project.properties` and is passed as `-Dsonar.organization=` to the scanner and as the `organization` param to `/api/issues/search`. `doctor.js` also validates the organization field for SonarCloud setups.
+
+### GitHub Actions CI integration
+
+`src/ci.js` exports `postCiComment` which is called automatically after every scan when `GITHUB_ACTIONS=true`. It reads `GITHUB_TOKEN`, `GITHUB_REPOSITORY`, and `GITHUB_EVENT_PATH` to find the PR number and upsert a comment (updates an existing Aegis comment if present, otherwise creates one). It is a no-op when any of these env vars is missing, so it never breaks local or non-PR runs.
+
 ### Config loading
 
-`loadConfig` in `run.js` merges defaults → `.aegisrc.json` → `.aegisrc.local.json` → CLI `--format` flag. The `issuesFile` key is a base name without extension; `resolveIssuesPath` appends the correct extension based on format.
+`loadConfig` in `run.js` merges defaults → `.aegisrc.json` → `.aegisrc.local.json` → CLI `--format` flag. The `issuesFile` key is a base name without extension; `resolveIssuesPath` appends the correct extension based on format. The `previewExtensions` key (default `null`) controls which file extensions are passed to `sonar.inclusions` in `--preview` mode; `null` means all changed files are included.
 
 ### Color helpers
 
